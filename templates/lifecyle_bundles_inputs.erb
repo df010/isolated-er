@@ -1,0 +1,7 @@
+        lifecycle_bundles:
+        - (( .properties.lifecycle_bundle_cflinux2.value ))
+        - (( .properties.lifecycle_bundle_windows2012R2.value ))
+        - (( .properties.lifecycle_bundle_docker.value ))
+<%lifecycle_bundles.each { |bundle| %>
+        - (( .properties.lifecycle_bundle_<%= bundle%>.value ))
+<% }%>

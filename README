@@ -1,0 +1,2 @@
+Check package.sh for example command to generate updated cf elastic runtime tile.
+The original cf elastic runtime tile(e.g. cf-1.8.17-build.3.pivotal) will be updated with new stacks support, and new install package for each network will be generated in build/*.pivotal
