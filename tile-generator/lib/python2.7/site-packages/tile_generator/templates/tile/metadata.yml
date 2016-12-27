@@ -1,0 +1,557 @@
+---
+name: {{ name }}
+label: {{ label }}
+description: {{ description }}
+icon_image: {{ base64(icon_file) }}
+product_version: '{{ version }}'
+metadata_version: '1.5'
+minimum_version_for_upgrade: '0.0.1'
+rank: 1
+serial: true
+{% if service_broker %}
+service_broker: true
+{% endif %}
+
+releases:
+{% for release in releases %}
+{% if release.file %}
+- file: {{ release.file }}
+  name: {{ release.release_name }}
+  version: '{{ release.version }}'
+{% endif %}
+{% endfor %}
+
+stemcell_criteria:
+  os: {{ stemcell_criteria.os or 'ubuntu-trusty' }}
+  requires_cpi: false
+  version: '{{ stemcell_criteria.version or 3146.5 }}'
+
+property_blueprints:
+#
+# Parameters for the entire product
+#
+- name: org
+  type: string
+  configurable: true
+  default: {{ org }}
+- name: space
+  type: string
+  configurable: true
+  default: {{ space }}
+- name: apply_open_security_group
+  type: boolean
+  configurable: true
+  default: {{ apply_open_security_group }}
+- name: allow_paid_service_plans
+  type: boolean
+  configurable: true
+  default: {{ allow_paid_service_plans }}
+{% for service_plan_form in service_plan_forms %}
+#
+# Properties for on-demand service plans
+#
+- name: {{ service_plan_form.name }}
+  type: collection
+  configurable: true
+  optional: {{ service_plan_form.optional if 'optional' in service_plan_form else 'true' }}
+  property_blueprints:
+  - name: guid
+    type: uuid
+    optional: false
+    unique: true
+  - name: name
+    type: string
+    unique: true
+    configurable: true
+  {% for field in service_plan_form.properties %}
+  - {{ field | yaml | indent }}
+  {% endfor %}
+{% endfor %}
+
+{% for release in releases %}
+{% for package in release.packages %}
+{% if package.is_buildpack %}
+#
+# Standard buildpack properties for package {{ package.name }}
+#
+- name: {{ package.name }}_buildpack_order
+  type: integer
+  configurable: true
+  default: {{ package.buildpack_order or 99 }}
+{% endif %}
+{% if package.is_broker  %}
+#
+# Standard broker properties for package {{ package.name }}
+#
+- name: {{ package.name }}_enable_global_access_to_plans
+  type: boolean
+  configurable: true
+  default: {{ package.enable_global_access_to_plans or false }}
+{% endif %}
+{% if package.is_external_broker %}
+#
+# Standard external broker properties for package {{ package.name }}
+#
+- name: {{ package.name }}_url
+  type: string
+  configurable: true
+- name: {{ package.name }}_user
+  type: string
+  configurable: true
+- name: {{ package.name }}_password
+  type: secret
+  configurable: true
+{% endif %}
+{% endfor %}
+{% endfor %}
+#
+# Custom properties from the tile.yml file
+#
+{% for property in all_properties %}
+- {{ property | expand_selector | yaml | indent(2) }}
+{% endfor %}
+
+form_types:
+{% for form in forms %}
+#
+# Custom form {{ form.name}} from the tile.yml file
+#
+- name: {{ form.name }}
+  label: {{ form.label }}
+  description: {{ form.description or form.label }}
+  {% if form.markdown %}
+  markdown: |
+    {{ form.markdown | indent }}
+  {% endif %}
+  property_inputs:
+  {% for property in form.properties %}
+  - reference: .properties.{{ property.name }}
+    label: {{ property.label }}
+    description: {{ property.description or property.label }}
+    {% if property.property_blueprints %}
+    property_inputs:
+    {% for input in property.property_blueprints %}
+    {# This... is ridiculously inconsistent. In every other place the names are fully qualified #}
+    - reference: {{ input.name }}
+      label: {{ input.label }}
+      description: {{ input.description or input.label}}
+    {% endfor %}
+    {% endif %}
+    {% if property.option_templates %}
+    selector_property_inputs:
+    {% for option in property.option_templates %}
+    - reference: .properties.{{ property.name }}.{{ option.name }}
+      label: {{ option.label or option.select_value }}
+      property_inputs:
+      {% for input in option.property_blueprints %}
+      - reference: .properties.{{ property.name }}.{{ option.name }}.{{ input.name }}
+        label: {{ input.label }}
+        description: {{ input.description or input.label }}
+      {% endfor %}
+    {% endfor %}
+    {% endif %}
+  {% endfor %}
+{% endfor %}
+
+{% for service_plan_form in service_plan_forms %}
+#
+# Custom Service Plan form {{service_plan_form.name}} from the tile.yml file
+#
+- name: {{ service_plan_form.name }}
+  label: {{ service_plan_form.label }}
+  description: {{ service_plan_form.description or service_plan_form.label }}
+  {% if service_plan_form.markdown %}
+  markdown: |
+    {{ service_plan_form.markdown | indent }}
+  {% endif %}
+  property_inputs:
+  - reference: .properties.{{ service_plan_form.name }}
+    label: {{ service_plan_form.label }}
+    property_inputs:
+    - reference: name
+      label: Plan Name
+      description: "Name of Plan"
+      slug: false
+  {% for field in service_plan_form.properties %}
+    - reference: {{ field.name }}
+      label: {{ field.label or field.name }}
+      description: {{ field.description }}
+      slug: false
+  {% endfor %}
+{% endfor %}
+
+{% for package in packages if package.is_buildpack %}
+{% if loop.first %}
+#
+# Buildpack form
+#
+- name: buildpacks
+  label: Buildpack Settings
+  description: Configurable settings for buildpacks
+  property_inputs:
+{% endif %}
+  - reference: .properties.{{ package.name }}_buildpack_order
+    label: {{ package.label or package.name }} Buildpack Order
+    description: 'Enter order for the {{ package.label or package.name }} buildpack'
+{% endfor %}
+{% for package in packages if package.is_external_broker %}
+{% if loop.first %}
+#
+# External broker form
+#
+- name: external_brokers
+  label: Broker Settings
+  description: Configurable settings for external service brokers
+  property_inputs:
+{% endif %}
+  - reference: .properties.{{ package.name }}_url
+    label: Service Broker Application URI for {{ package.label or package.name }}
+    description: 'Enter the External uri/endpoint (with http or https protocol) for the Service Broker'
+  - reference: .properties.{{ package.name }}_user
+    label: Service Broker Username for {{ package.label or package.name }}
+    description: 'Enter the username for accessing the Service Broker'
+  - reference: .properties.{{ package.name }}_password
+    label: Service Broker Password for {{ package.label or package.name }}
+    description: 'Enter the password for accessing the Service Broker'
+{% endfor %}
+{% for package in packages if package.is_broker %}
+{% if loop.first %}
+#
+# Service access form
+#
+- name: service_access
+  label: Service Access
+  description: Determine availability of services
+  property_inputs:
+{% endif %}
+  - reference: .properties.{{ package.name }}_enable_global_access_to_plans
+    label: Enable global access to plans of service {{ package.label or package.name }}
+    description: "Enable global access to plans in the marketplace"
+{% endfor %}
+
+job_types:
+#
+# Default compilation job
+#
+- name: compilation
+  resource_label: compilation
+  resource_definitions:
+   - name: ram
+     type: integer
+     configurable: true
+     default: 4096
+   - name: ephemeral_disk
+     type: integer
+     configurable: true
+     default: {{ compilation_vm_disk_size }}
+   - name: persistent_disk
+     type: integer
+     configurable: true
+     default: 0
+   - name: cpu
+     type: integer
+     configurable: true
+     default: 2
+  static_ip: 0
+  dynamic_ip: 1
+  max_in_flight: 1
+  single_az_only: true
+  instance_definitions:
+  - name: instances
+    type: integer
+    configurable: true
+    default: 1
+{% for release in releases %}
+{% for job in release.jobs if job.template and job.template == 'docker-bosh' %}
+#
+# {{ job.template }} job for {{ job.package.name }}
+#
+- name: {{ job.name }}
+  resource_label: {{ job.name }}
+  errand: false
+  templates:
+  - name: containers
+    release: docker
+  - name: docker
+    release: docker
+  - name: {{ job.type }}
+    release: {{ release.name }}
+  - name: route_registrar
+    release: routing
+  resource_definitions:
+  - name: ram
+    type: integer
+    configurable: false
+    default: {{ job.package.memory }}
+  - name: ephemeral_disk
+    type: integer
+    configurable: false
+    default: {{ job.package.ephemeral_disk }}
+  - name: persistent_disk
+    type: integer
+    configurable: false
+    default: {{ job.package.persistent_disk }}
+  - name: cpu
+    type: integer
+    configurable: false
+    default: {{ job.package.cpu }}
+  static_ip: 1
+  dynamic_ip: 0
+  max_in_flight: 1
+  single_az_only: false
+  instance_definitions:
+  - name: instances
+    type: integer
+    configurable: true
+    default: {{ job.package.instances }}
+  property_blueprints:
+  - name: vm_credentials
+    type: salted_credentials
+    default:
+      identity: vcap
+  - name: app_credentials
+    type: salted_credentials
+  manifest: |
+    {{ job.package.manifest | yaml | indent }}
+    domain: (( ..cf.cloud_controller.system_domain.value ))
+    app_domains:
+    - (( ..cf.cloud_controller.apps_domain.value ))
+    org: (( .properties.org.value ))
+    space: (( .properties.space.value ))
+    ssl:
+      skip_cert_verify: (( ..cf.ha_proxy.skip_cert_verify.value ))
+    cf:
+      admin_user: (( ..cf.uaa.system_services_credentials.identity ))
+      admin_password: (( ..cf.uaa.system_services_credentials.password ))
+    apply_open_security_group: (( .properties.apply_open_security_group.value ))
+    allow_paid_service_plans: (( .properties.allow_paid_service_plans.value ))
+    security:
+      user: (( .{{ job.name }}.app_credentials.identity ))
+      password: (( .{{ job.name }}.app_credentials.password ))
+    nats:
+      machines: (( ..cf.nats.ips ))
+      user: nats
+      password: (( ..cf.nats.credentials.password ))
+      port: 4222
+    route_registrar:
+      routes:
+      - name: {{ job.package.name | hyphens }}
+        uris:
+        - {{ job.package.name | hyphens }}.(( ..cf.cloud_controller.apps_domain.value ))
+        port: 8080
+        registration_interval: 20s
+{% for property in all_properties %}
+    {{ property | property | yaml | indent }}
+{% endfor %}
+{% for service_plan_form in service_plan_forms %}
+    {{ service_plan_form.name }}: (( .properties.{{ service_plan_form.name }}.value ))
+{% endfor %}
+{% for package in packages %}
+    {{ package.name }}:
+      name: {{ package.name }}
+{% if package.is_external_broker %}
+      url: (( .properties.{{ package.name }}_url.value ))
+      user: (( .properties.{{ package.name }}_user.value ))
+      password: (( .properties.{{ package.name }}_password.value ))
+{% elif package.is_broker %}
+      user: (( .{{ job.name }}.app_credentials.identity ))
+      password: (( .{{ job.name }}.app_credentials.password ))
+{% endif %}
+{% if package.is_broker %}
+      enable_global_access_to_plans: (( .properties.{{ package.name }}_enable_global_access_to_plans.value ))
+{% endif %}
+{% if package.is_buildpack %}
+      buildpack_order: (( .properties.{{ package.name }}_buildpack_order.value ))
+{% endif %}
+{% if package.is_docker_bosh %}
+      host: (( .docker-bosh-{{ package.name }}.first_ip ))
+      hosts: (( .docker-bosh-{{ package.name }}.ips ))
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+{% for release in releases if release.type == 'bosh-release' %}
+{% for job in release.jobs %}
+- name: {{ job.name }}
+  resource_label: {{ job.name }}
+{% if job.lifecycle and job.lifecycle == 'errand' %}
+  errand: true
+{% endif %}
+  templates:
+{% for template in job.templates %}
+  - name: {{ template.name }}
+    release: {{ template.release }}
+{% if template.consumes %}
+    consumes: |
+      {{ template.consumes | indent(6) }}
+{% endif %}
+{% if template.provides %}
+    provides: |
+      {{ template.provides | indent(6) }}
+{% endif %}
+{% endfor %}
+  resource_definitions:
+  - name: ram
+    type: integer
+    configurable: false
+    default: {{ job.memory or 512 }}
+  - name: ephemeral_disk
+    type: integer
+    configurable: false
+    default: {{ job.ephemeral_disk or 4096 }}
+  - name: persistent_disk
+    type: integer
+    configurable: false
+    default: {{ job.persistent_disk or 0 }}
+  - name: cpu
+    type: integer
+    configurable: false
+    default: {{ job.cpu or 1 }}
+  static_ip: {{ job.static_ip or 0 }}
+  dynamic_ip: {{ job.dynamic_ip or 0 }}
+  max_in_flight: {{ job.max_in_flight or 1 }}
+  instance_definitions:
+  - name: instances
+    type: integer
+{% if job.lifecycle and job.lifecycle == 'errand' %}
+    configurable: false
+    default: 1
+{% else %}
+    configurable: true
+    default: {{ job.instances or 1 }}
+{% endif %}
+  property_blueprints:
+  - name: vm_credentials
+    type: salted_credentials
+    default:
+      identity: vcap
+  manifest: |
+    {{ job.properties | yaml | indent }}
+{% endfor %}
+{% endfor %}
+{% for release in releases if not release.type == 'bosh-release' %}
+{% for job in release.jobs if not job.template == 'docker-bosh' %}
+#
+# {{ job.type }} job
+#
+- name: {{ job.name }}
+  resource_label: {{ job.name }}
+  errand: true
+  templates:
+  - name: {{ job.type }}
+    release: {{ release.release_name }}
+  resource_definitions:
+  - name: ram
+    type: integer
+    configurable: false
+    default: 1024
+  - name: ephemeral_disk
+    type: integer
+    configurable: false
+    default: 4096
+  - name: persistent_disk
+    type: integer
+    configurable: false
+    default: 0
+  - name: cpu
+    type: integer
+    configurable: false
+    default: 1
+  static_ip: 0
+  dynamic_ip: 1
+  max_in_flight: 1
+  single_az_only: false
+  instance_definitions:
+  - name: instances
+    type: integer
+    configurable: false
+    default: 1
+  property_blueprints:
+  - name: vm_credentials
+    type: salted_credentials
+    default:
+      identity: vcap
+  - name: app_credentials
+    type: salted_credentials
+  manifest: |
+    domain: (( ..cf.cloud_controller.system_domain.value ))
+    app_domains:
+    - (( ..cf.cloud_controller.apps_domain.value ))
+    org: (( .properties.org.value ))
+    space: (( .properties.space.value ))
+    ssl:
+      skip_cert_verify: (( ..cf.ha_proxy.skip_cert_verify.value ))
+    cf:
+      admin_user: (( ..cf.uaa.system_services_credentials.identity ))
+      admin_password: (( ..cf.uaa.system_services_credentials.password ))
+    apply_open_security_group: (( .properties.apply_open_security_group.value ))
+    allow_paid_service_plans: (( .properties.allow_paid_service_plans.value ))
+    security:
+      user: (( .{{ job.name }}.app_credentials.identity ))
+      password: (( .{{ job.name }}.app_credentials.password ))
+{% for property in all_properties %}
+    {{ property | property | yaml | indent }}
+{% endfor %}
+{% for service_plan_form in service_plan_forms %}
+    {{ service_plan_form.name }}: (( .properties.{{ service_plan_form.name }}.value ))
+{% endfor %}
+{% for package in packages %}
+    {{ package.name }}:
+      name: {{ package.name }}
+{% if package.is_external_broker %}
+      url: (( .properties.{{ package.name }}_url.value ))
+      user: (( .properties.{{ package.name }}_user.value ))
+      password: (( .properties.{{ package.name }}_password.value ))
+{% elif package.is_broker %}
+      user: (( .{{ job.name }}.app_credentials.identity ))
+      password: (( .{{ job.name }}.app_credentials.password ))
+{% endif %}
+{% if package.is_broker %}
+      enable_global_access_to_plans: (( .properties.{{ package.name }}_enable_global_access_to_plans.value ))
+{% endif %}
+{% if package.is_buildpack %}
+      buildpack_order: (( .properties.{{ package.name }}_buildpack_order.value ))
+{% endif %}
+{% if package.is_docker_bosh %}
+      host: (( .docker-bosh-{{ package.name }}.first_ip ))
+      hosts: (( .docker-bosh-{{ package.name }}.ips ))
+{% endif %}
+{% endfor %}
+{% endfor %}
+{% endfor %}
+
+post_deploy_errands:
+{% for release in releases %}
+{% for job in release.jobs %}
+{% if job.lifecycle and job.lifecycle == 'errand' and job.post_deploy %}
+- name: {{ job.name }}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+pre_delete_errands:
+{% for release in releases %}
+{% for job in release.jobs %}
+{% if job.lifecycle and job.lifecycle == 'errand' and job.pre_delete %}
+- name: {{ job.name }}
+{% endif %}
+{% endfor %}
+{% endfor %}
+
+update:
+  canaries: {{ ( update and update.canaries ) or 1 }}
+  canary_watch_time: {{ ( update and update.canary_watch_time ) or '10000-100000' }}
+  max_in_flight: {{ ( update and update.max_in_flight ) or 1 }}
+  update_watch_time: {{ ( update and update.update_watch_time ) or '10000-100000' }}
+
+{% for product in requires_product_versions %}
+{% if loop.first %}
+requires_product_versions:
+{% endif %}
+- name: {{ product.name }}
+  version: '{{ product.version }}'
+{% endfor %}
+
+provides_product_versions:
+- name: {{ name }}
+  version: '{{ version }}'

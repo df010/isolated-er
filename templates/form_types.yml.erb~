@@ -1,0 +1,35 @@
+- description: Advanced Config for experienced operators only
+  name: advanced-config
+  label: Advanced Config
+  property_inputs:
+  - reference: ".properties.keepalived_vip"
+    label: Virtual IP for keepalived
+    description: Virtual IP for keepalived.
+  - reference: ".properties.virtual_router_id"
+    label: Virtual IP for keepalived
+    description: Virtual IP for keepalived.
+
+  - reference: ".properties.stacks"
+    label: Stacks Configuration
+    description: Configure all the stacks you want to deploy for your applications.
+    property_inputs:
+    - reference: name
+      label: Stack Name
+      slug: false
+    - reference: description
+      label: Description for this stack
+      slug: false
+  - reference: ".properties.lifecycle_bundle_cflinux2"
+    label: Lifecyle Bundles for cflinux2
+    description: Lifecyle Bundles for cflinux2
+  - reference: ".properties.lifecycle_bundle_windows2012R2"
+    label: Lifecyle Bundles for windows2012R2
+    description: Lifecyle Bundles for windows2012R2
+  - reference: ".properties.lifecycle_bundle_docker"
+    label: Lifecyle Bundles for docker
+    description: Lifecyle Bundles for docker
+<%lifecycle_bundles.each { |bundle| %>
+  - reference: ".properties.lifecycle_bundle_<%= bundle%>"
+    label: Lifecyle Bundles for <%= bundle%>
+    description: Lifecyle Bundles for <%= bundle%>
+<% }%>

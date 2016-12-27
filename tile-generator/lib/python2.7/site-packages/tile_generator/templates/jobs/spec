@@ -1,0 +1,94 @@
+---
+name: {{ job_type }}
+templates:
+{% if errand %}
+  {{ job_type }}.sh.erb: bin/run
+  opsmgr.env.erb: bin/opsmgr.env
+{% else %}
+  {{ job_type }}.sh.erb: bin/{{ job_type }}_ctl
+  opsmgr.env.erb: bin/opsmgr.env
+{% endif %}
+packages:
+{% if not package %}
+- cf_cli
+{% for package in context.packages if not package.is_bosh_release %}
+- {{ package.name }}
+{% endfor %}
+{% else %}
+{% if package.requires_cf_cli %}
+- cf_cli
+{% endif %}
+{% if not package.is_docker_app %}
+- {{ package.name }}
+{% endif %}
+{% if not errand %}
+- common
+{% endif %}
+{% endif %}
+properties:
+  domain:
+    description: 'CloudFoundry system domain'
+  app_domains:
+    description: 'CloudFoundry application domains'
+  org:
+    description: 'Org for the Application'
+    default: ''
+  space:
+    description: 'Space for the Application'
+    default: ''
+  ssl.skip_cert_verify:
+    description: 'Whether to verify SSL certs when making web requests'
+  cf.admin_user:
+    description: 'Username of the CF admin user'
+  cf.admin_password:
+    description: 'Password of the CF admin user'
+  apply_open_security_group:
+    description: 'Open security group for the app to access outside'
+    default: false
+  allow_paid_service_plans:
+    description: 'Allow use of paid service plans'
+    default: false
+  security.user:
+    description: 'Basic auth user'
+  security.password:
+    description: 'Basic auth password'
+{% for property in context.all_properties %}
+  {{ property.name }}:
+    description: {{ property.description or property.name }}
+{% endfor %}
+{% for service_plan_form in context.service_plan_forms %}
+  {{ service_plan_form.name }}: 
+    description: {{ service_plan_form.name }}
+{% endfor %}
+{% for package in context.packages %}
+  {{ package.name }}.name:
+    description: 'Name of package'
+{% if package.is_external_broker %}
+  {{ package.name }}.url:
+    description: 'URL to access service'
+  {{ package.name }}.user:
+     description: 'Basic auth username to access service'
+  {{ package.name }}.password:
+     description: 'Basic auth password to access service'
+{% elif package.is_broker %}
+  {{ package.name }}.user:
+     description: 'Basic auth username'
+  {{ package.name }}.password:
+     description: 'Basic auth password'
+{% endif %}
+{% if package.is_broker %}
+  {{ package.name }}.enable_global_access_to_plans:
+    description: 'Access to all service plans'
+    default: false
+{% endif %}
+{% if package.is_buildpack %}
+  {{ package.name }}.buildpack_order:
+    description: 'Order of the Buildpack'
+{% endif %}
+{% if package.is_docker_bosh %}
+  {{ package.name }}.host:
+    description: '(First) Hostname for the container'
+  {{ package.name }}.hosts:
+    description: '(All) Hostnames for the container'
+{% endif %}
+{% endfor %}

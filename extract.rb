@@ -7,7 +7,7 @@ if(ARGV.length < 3)
 end
 src=ARGV[0]; #original cf.yml
 result=ARGV[1]; 
-version=ARGV[2];
+vversion=ARGV[2];
 
 def getEle(arr, name)
   for item in arr
@@ -36,6 +36,14 @@ def updateJobProperties(item)
   item['name']=item['name']+deploymentName
   item['instance_definition'].delete('zero_if')
   # updatePropertyReference(item['instance_definition']['zero_if'])
+  item
+end
+
+def addKeepalivedProperties(item)
+  item['manifest']=item['manifest'].gsub(/( *ha_proxy\: *)/, "keepalived\:\n  vip\: \(\( keepalived_vip.value \)\)\n  virtual_router_id\: \(\( keepalived_virtual_router_id.value \)\)\n\\1")
+  item['templates'].push({'name'=>'keepalived','release'=>'haproxy'})
+  item['property_blueprints'].push({"configurable"=>true,"name"=>"keepalived_vip","optional"=>false,"type"=>"string"})
+  item['property_blueprints'].push({"configurable"=>true,"name"=>"keepalived_virtual_router_id","optional"=>true,"type"=>"integer"})
   item
 end
 
@@ -104,6 +112,12 @@ def addProperty(job)
   return job
 end
 
+
+def addKeepalivedInputs(forms)
+  return forms
+end
+
+
 # - description:
 #   label: Networking
 #   name: networking
@@ -113,10 +127,13 @@ end
 #     reference: ".routecr.static_ips"
 
 def addInputs(forms)
-  forms.push( {"description"=>"Name of stack in this network",
-               "label"=>"Stack","name"=>"stack",
-               "property_inputs"=>[{"description"=>"Stack","label"=>"Stack","reference"=>".diego_cell"+deploymentName+".stack"}]  });
+  forms.push( {"description"=>"Config",
+               "label"=>"Config","name"=>"config",
+               "property_inputs"=>[{"description"=>"Stack","label"=>"Stack","reference"=>".diego_cell"+deploymentName+".stack"},
+                                   {"description"=>"Virtual IP","label"=>"Virtual IP","reference"=>".ha_proxy"+deploymentName+".keepalived_vip"},
+                                   {"description"=>"Same Keepalived group share same virtual router ID ","label"=>"Virtual Router ID","reference"=>".ha_proxy"+deploymentName+".keepalived_virtual_router_id"}]  });
 end
+
 def printKey(obj)
   for v,i in obj
     puts v
@@ -139,6 +156,14 @@ orig_src_metadata=Marshal.load(Marshal.dump(src_metadata))
 releases=dependsReleases(getEle(src_metadata['job_types'],'router'))
              .push(*dependsReleases(getEle(src_metadata['job_types'],'diego_cell')))
              .push(*dependsReleases(getEle(src_metadata['job_types'],'ha_proxy'))).uniq;
+
+releases.each {|relName|
+  release =getEle(src_metadata['releases'],relName);
+
+}
+
+
+
 result_metadata = {}
 result_metadata['name']=deploymentName
 result_metadata['releases']=[];#src_metadata['releases']
@@ -148,19 +173,26 @@ releases.each {|relName|
   result_metadata['releases'].push(release);
 }
 
+ARGV.each_with_index {|file, index|
+  next if index <3
+  name = file.to_s.split("-")[0]
+  version = file.to_s.split("-")[1].split(".")[0]
+  result_metadata['releases'].push({"name"=>name,"file"=>file,"version"=>version})
+}
+
 result_metadata['stemcell_criteria']=src_metadata['stemcell_criteria']
 result_metadata['description']=src_metadata['description']
 result_metadata['icon_image']=src_metadata['icon_image']
 result_metadata['label']='Runtime For '+result_metadata['name']
 result_metadata['metadata_version']=src_metadata['metadata_version']
-result_metadata['product_version']=version
+result_metadata['product_version']=vversion
 result_metadata['minimum_version_for_upgrade']="0.1"
 result_metadata['rank']=80
 result_metadata['serial']=src_metadata['serial']
 
 result_metadata['job_types']=[]
 result_metadata['job_types'].push(updateJobProperties(getEle(src_metadata['job_types'], 'router')))
-result_metadata['job_types'].push(updateJobProperties(getEle(src_metadata['job_types'], 'ha_proxy')))
+result_metadata['job_types'].push(addKeepalivedProperties(updateJobProperties(getEle(src_metadata['job_types'], 'ha_proxy'))))
 result_metadata['job_types'].push(addProperty(updateJobProperties(getEle(src_metadata['job_types'], 'diego_cell'))))
 # result_metadata['job_types'].push(getEle(src_metadata['job_types'],'compilation')) #no compilation node in 1.8
 

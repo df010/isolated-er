@@ -1,6 +1,21 @@
 #!/bin/bash
 set -x
 set -e
+
+copy_releases(){
+ while read RE_FOLDER
+ do
+     ls -1 $RE_FOLDER/releases/*/*.tgz|awk -F'/' '{print $NF,$0}'|sort -t- -k 2 -rn|head -1|awk '{print $2}'|xargs -i cp {} $BUILD/$i/releases/
+ done
+}
+
+list_releases(){
+ while read REL
+ do 
+     ls -1 $REL/releases/*/*.tgz|awk -F'/' '{print $NF}'|sort -t- -k 2 -rn|head -1
+ done
+}
+
 ER_TILE=$1
 BUILD=build
 rm -rf $BUILD/* || true
@@ -53,20 +68,28 @@ fi
 
 cd -
 
+pwd
 
-./extract.rb $METAFILE $BUILD/base.yml $2 |xargs -i unzip $ER_TILE releases/{} -d $BUILD
+RELEASE_FILES=`ls -1 -d releases/* |list_releases`
 
+./extract.rb $METAFILE $BUILD/base.yml $2 `echo $RELEASE_FILES`  |xargs -i unzip $ER_TILE releases/{} -d $BUILD
+#./extract.rb $METAFILE $BUILD/base.yml $2 `echo $RELEASE_FILES`  
+
+VV=$2
 echo $?
 shift
-shift 
+shift
 
 for i in $@; do
     mkdir -p $BUILD/$i/metadata
+    mkdir -p $BUILD/$i/migrations
     mkdir -p $BUILD/$i/releases
+    cp -r migrations/* $BUILD/$i/migrations/
     cp $BUILD/releases/* $BUILD/$i/releases/
+    ls -1 -d  releases/* |copy_releases
     sed "s/__name__/$i/g" $BUILD/base.yml >  $BUILD/$i/metadata/${i}.yml
     cd $BUILD/$i 
-    zip -r ../${i}.pivotal *
+    zip -r ../${i}-${VV}.pivotal *
     cd -
 done;
 rm $BUILD/base.yml

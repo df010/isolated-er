@@ -1,0 +1,9 @@
+---
+name: {{ package.name }}
+
+dependencies: []
+
+files:
+{% for file in files %}
+- {{ package.name }}/{{ file }}
+{% endfor %}
